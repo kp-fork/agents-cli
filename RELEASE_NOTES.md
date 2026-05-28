@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.1] - 2026-05-28
+- Add --dryrun as an alias for --dry-run
+- Smarter skills installation
+  - https://github.com/google/agents-cli/issues/23
+- Cache credentials for better performance
+- Fix is_authenticated to work without gcloud
+  - https://github.com/google/agents-cli/issues/16
+- Fix agent runtime deploy error to be clearer
+- Remove 'beta' from gcloud commands that no longer need them
+- Fix broken doc links
+- Auto gen lockfile if it is missing before trying to export it in deploy
+  - https://github.com/google/agents-cli/issues/17
+
 ## [0.2.0] - 2026-05-15
 - Moved agent-cli project config into a language-independent agents-cli-manifest.yaml file
   - Old config embedded in pyproject.toml can be automatically migrated with `agents-cli scaffold upgrade`

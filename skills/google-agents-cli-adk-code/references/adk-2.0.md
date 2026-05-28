@@ -43,11 +43,11 @@ uv add --prerelease=allow google-adk
 ```
 
 **Official docs:** [Workflows overview](https://adk.dev/workflows/index.md) ·
-[Graph routes](https://adk.dev/workflows/graph-routes/index.md) ·
+[Graph routes](https://adk.dev/graphs/routes/index.md) ·
 [Collaboration](https://adk.dev/workflows/collaboration/index.md) ·
-[Data handling](https://adk.dev/workflows/data-handling/index.md) ·
-[Dynamic workflows](https://adk.dev/workflows/dynamic/index.md) ·
-[Human-in-the-loop](https://adk.dev/workflows/human-input/index.md)
+[Data handling](https://adk.dev/graphs/data-handling/index.md) ·
+[Dynamic workflows](https://adk.dev/graphs/dynamic/index.md) ·
+[Human-in-the-loop](https://adk.dev/graphs/human-input/index.md)
 
 ## 1. Core Concepts
 
@@ -610,9 +610,9 @@ my_workflow/
 ## Further Reading
 
 - [Workflows overview](https://adk.dev/workflows/index.md)
-- [Graph routes & conditional edges](https://adk.dev/workflows/graph-routes/index.md)
+- [Graph routes & conditional edges](https://adk.dev/graphs/routes/index.md)
 - [Agent collaboration & task mode](https://adk.dev/workflows/collaboration/index.md)
-- [Data handling & state](https://adk.dev/workflows/data-handling/index.md)
-- [Dynamic workflows](https://adk.dev/workflows/dynamic/index.md)
-- [Human-in-the-loop](https://adk.dev/workflows/human-input/index.md)
+- [Data handling & state](https://adk.dev/graphs/data-handling/index.md)
+- [Dynamic workflows](https://adk.dev/graphs/dynamic/index.md)
+- [Human-in-the-loop](https://adk.dev/graphs/human-input/index.md)
 - [App class (workflow container)](https://adk.dev/apps/index.md)
