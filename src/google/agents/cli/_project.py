@@ -155,6 +155,30 @@ def read_project_config(project_dir: str | None = None) -> ProjectConfig:
     return ProjectConfig.from_dict(data)
 
 
+def _parse_version(v: str) -> tuple[int, ...]:
+    """Parse a dotted numeric version into a comparable tuple.
+
+    Raises ``ValueError`` on non-numeric components (e.g. a ``0.0.0-dev``
+    source build), which callers treat as "version unknown — don't compare".
+    """
+    return tuple(int(x) for x in v.split("."))
+
+
+def scaffold_older_than(cfg: ProjectConfig, version: str) -> bool:
+    """True when the version that scaffolded ``cfg`` is older than ``version``.
+
+    Best-effort: returns False when the scaffold version is missing or
+    non-numeric (e.g. a ``0.0.0-dev`` source build), so callers fall back to
+    generic guidance instead of guessing.
+    """
+    if not cfg.acli_version:
+        return False
+    try:
+        return _parse_version(cfg.acli_version) < _parse_version(version)
+    except ValueError:
+        return False
+
+
 def check_cli_version(cfg: ProjectConfig) -> None:
     """Warn if the running CLI version doesn't match the version that scaffolded the project.
 
@@ -168,13 +192,10 @@ def check_cli_version(cfg: ProjectConfig) -> None:
 
     from google.agents.cli import __version__
 
-    def _parse(v: str) -> tuple[int, ...]:
-        return tuple(int(x) for x in v.split("."))
-
     try:
-        project_ver = _parse(acli_version)
-        cli_ver = _parse(__version__)
-    except Exception:
+        project_ver = _parse_version(acli_version)
+        cli_ver = _parse_version(__version__)
+    except ValueError:
         return
 
     if cli_ver < project_ver:

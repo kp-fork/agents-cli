@@ -36,8 +36,14 @@ from google.iam.v1 import iam_policy_pb2, policy_pb2
 from vertexai._genai import _agent_engines_utils
 from vertexai._genai.types import AgentEngine, AgentEngineConfig, IdentityType
 
-from google.agents.cli._project import ProjectConfig, find_project_root
+from google.agents.cli._agent_runtime_a2a import build_agent_runtime_a2a_card_url
+from google.agents.cli._project import (
+    ProjectConfig,
+    find_project_root,
+    scaffold_older_than,
+)
 from google.agents.cli._runner import run_resolved
+from google.agents.cli._tools import ToolNotFoundError
 from google.agents.cli.deploy._operation import (
     METADATA_FILE,
     clear_operation,
@@ -52,6 +58,7 @@ from google.agents.cli.deploy._utils import (
     DEFAULT_MIN_INSTANCES,
     DEFAULT_NUM_WORKERS,
     parse_key_value_pairs,
+    resolve_service_name,
 )
 from google.agents.cli.scaffold.utils.language import get_project_version
 
@@ -59,66 +66,6 @@ from google.agents.cli.scaffold.utils.language import get_project_version
 warnings.filterwarnings(
     "ignore", category=FutureWarning, module="google.cloud.aiplatform"
 )
-
-
-def generate_class_methods_from_agent(agent_instance: Any) -> list[dict[str, Any]]:
-    """Generate method specs with schemas from agent's register_operations()."""
-    registered_operations = _agent_engines_utils._get_registered_operations(
-        agent=agent_instance
-    )
-    class_methods_spec = _agent_engines_utils._generate_class_methods_spec_or_raise(
-        agent=agent_instance,
-        operations=registered_operations,
-    )
-    return [
-        _agent_engines_utils._to_dict(method_spec) for method_spec in class_methods_spec
-    ]
-
-
-_INTROSPECT_SCRIPT = """\
-import asyncio, importlib, inspect, json, sys
-sys.path.insert(0, ".")
-module = importlib.import_module(sys.argv[1])
-obj = getattr(module, sys.argv[2])
-if inspect.iscoroutine(obj):
-    obj = asyncio.run(obj)
-from vertexai._genai import _agent_engines_utils
-ops = _agent_engines_utils._get_registered_operations(agent=obj)
-specs = _agent_engines_utils._generate_class_methods_spec_or_raise(agent=obj, operations=ops)
-print(json.dumps([_agent_engines_utils._to_dict(s) for s in specs]))
-"""
-
-
-def _introspect_agent_via_subprocess(
-    entrypoint_module: str, entrypoint_object: str
-) -> list[dict[str, Any]]:
-    """Import agent in project's venv and generate class_methods via subprocess.
-
-    Runs the introspection in the project's own environment (via ``uv run``)
-    so that the CLI itself does not need the project's dependencies installed.
-    """
-    import tempfile
-
-    with tempfile.NamedTemporaryFile(
-        encoding="utf-8", mode="w", suffix=".py", delete=False
-    ) as f:
-        f.write(_INTROSPECT_SCRIPT)
-        script_path = f.name
-    try:
-        result = run_resolved(
-            ["uv", "run", "python", script_path, entrypoint_module, entrypoint_object],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        return json.loads(result.stdout)
-    except subprocess.CalledProcessError as e:
-        raise click.ClickException(
-            f"Failed to introspect agent {entrypoint_module}.{entrypoint_object}:\n"
-            f"{e.stderr}"
-        ) from e
-    finally:
-        os.unlink(script_path)
 
 
 def parse_secrets(secrets_string: str | None) -> dict[str, dict[str, str]]:
@@ -145,7 +92,7 @@ def _build_runtime_env_vars(
     *,
     set_env_vars: str | None,
     secrets: dict[str, dict[str, str]],
-    num_workers: int,
+    port: int | None = None,
 ) -> dict[str, Any]:
     """Assemble the runtime env vars for the deployed Agent Runtime.
 
@@ -155,20 +102,36 @@ def _build_runtime_env_vars(
     - ``AGENT_VERSION`` — the pyproject.toml version, read at runtime by the A2A
       agent card. Read only when the user hasn't supplied a value, so an override
       skips the pyproject read and its missing-version warning.
-    - ``NUM_WORKERS`` — defaults to ``num_workers``.
+    - ``PORT`` — the container port, when one is supplied.
     - telemetry toggles — Cloud Trace export and prompt/response capture in spans.
-
-    The deploy region is not baked in here: the agent reads ``GOOGLE_CLOUD_LOCATION``
-    at runtime, which the Agent Engine platform injects.
     """
     env_vars: dict[str, Any] = parse_key_value_pairs(set_env_vars)
     env_vars.update(secrets)  # type: ignore[arg-type]
     if "AGENT_VERSION" not in env_vars:
         env_vars["AGENT_VERSION"] = get_project_version(find_project_root() or Path.cwd())
-    env_vars.setdefault("NUM_WORKERS", str(num_workers))
+    if port:
+        env_vars.setdefault("PORT", str(port))
     env_vars.setdefault("GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY", "true")
     env_vars.setdefault("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "true")
     return env_vars
+
+
+def _existing_plain_env_vars(agent: Any) -> dict[str, str]:
+    """Plain env vars on a deployed Agent Runtime, as ``{name: value}``.
+
+    An update replaces the whole ``deployment_spec.env`` block, so re-sending
+    these preserves vars set outside this deploy. Secrets are skipped: the API
+    only touches them when secrets are supplied.
+    """
+    spec = getattr(agent.api_resource, "spec", None)
+    deployment_spec = getattr(spec, "deployment_spec", None) if spec else None
+    env = getattr(deployment_spec, "env", None) if deployment_spec else None
+    result: dict[str, str] = {}
+    for var in env or []:
+        name = getattr(var, "name", None)
+        if name:
+            result[name] = getattr(var, "value", "") or ""
+    return result
 
 
 def _get_resource_name_from_operation(operation_name: str) -> str:
@@ -191,6 +154,7 @@ def write_deployment_metadata(
         "remote_agent_runtime_id": remote_agent.api_resource.name,
         "deployment_target": "agent_runtime",
         "is_a2a": cfg.is_a2a,
+        "agent_directory": cfg.agent_directory,
         "deployment_timestamp": datetime.datetime.now(tz=datetime.UTC).isoformat(),
     }
 
@@ -212,14 +176,9 @@ def print_deployment_success(
     project_number = resource_name_parts[1]
 
     if cfg.is_a2a:
-        print(
-            "\n✅ Deployment successful! Test your agent: notebooks/adk_a2a_app_testing.ipynb"
-        )
-        print(f"Agent Runtime ID: {remote_agent.api_resource.name}")
-        agent_card_url = (
-            f"https://{location}-aiplatform.googleapis.com/v1beta1/"
-            f"projects/{project}/locations/{location}/"
-            f"reasoningEngines/{agent_runtime_id}/a2a/v1/card"
+        print("\n✅ Deployment successful!")
+        agent_card_url = build_agent_runtime_a2a_card_url(
+            location, remote_agent.api_resource.name, cfg.agent_directory
         )
         print(f"🪪 Agent Card URL: {agent_card_url}")
     else:
@@ -227,7 +186,8 @@ def print_deployment_success(
 
     print(f"Agent Runtime ID: {remote_agent.api_resource.name}")
 
-    service_account = remote_agent.api_resource.spec.service_account
+    spec = getattr(remote_agent.api_resource, "spec", None)
+    service_account = getattr(spec, "service_account", None) if spec else None
     if service_account:
         print(f"Service Account: {service_account}")
     else:
@@ -236,19 +196,11 @@ def print_deployment_success(
         )
         print(f"Service Account: {default_sa}")
 
-    if not cfg.is_a2a:
-        playground_url = (
-            f"https://console.cloud.google.com/vertex-ai/agents/agent-engines/"
-            f"locations/{location}/agent-engines/{agent_runtime_id}/"
-            f"playground?project={project}"
-        )
-        print(f"\n📊 Open Console Playground: {playground_url}\n")
-    else:
-        console_url = (
-            f"https://console.cloud.google.com/vertex-ai/agents/agent-engines/"
-            f"locations/{location}/agent-engines/{agent_runtime_id}?project={project}"
-        )
-        print(f"\n📊 View in Console: {console_url}\n")
+    console_url = (
+        f"https://console.cloud.google.com/vertex-ai/agents/agent-engines/"
+        f"locations/{location}/agent-engines/{agent_runtime_id}?project={project}"
+    )
+    print(f"\n📊 View in Console: {console_url}\n")
 
 
 def setup_agent_identity(client: Any, project: str, display_name: str) -> Any:
@@ -286,81 +238,90 @@ def setup_agent_identity(client: Any, project: str, display_name: str) -> Any:
     return agent
 
 
-def _generate_requirements_file(requirements_path: str) -> None:
-    """Auto-generate requirements.txt via uv export.
+# agent_runtime switched from reasoning-engine introspection to a container
+# build (which requires a Dockerfile) in this release. Projects scaffolded
+# before it never shipped a Dockerfile, so a missing one means the project
+# predates the container model.
+_CONTAINER_RUNTIME_VERSION = "0.6.0"
 
-    Tries with --no-annotate first, falls back without it for older uv versions.
-    Creates parent directories if they don't exist.
+
+def _missing_dockerfile_error(cfg: ProjectConfig) -> str:
+    """Actionable message for an agent_runtime deploy with no Dockerfile.
+
+    The usual cause is a project scaffolded before agent_runtime switched to a
+    container build: those projects deployed via reasoning-engine introspection
+    and never shipped a Dockerfile, so a newer CLI cannot build them.
     """
-    os.makedirs(os.path.dirname(requirements_path), exist_ok=True)
-
-    project_root = find_project_root() or "."
-    uv_lock_path = os.path.join(project_root, "uv.lock")
-    if not os.path.exists(uv_lock_path):
-        click.echo("  🔒 No uv.lock found. Running 'uv sync' to generate one...")
-        try:
-            run_resolved(
-                ["uv", "sync"],
-                cwd=project_root,
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-        except subprocess.CalledProcessError as e:
-            raise click.ClickException(
-                "Failed to run 'uv sync' to generate uv.lock"
-            ) from e
-
-    base_cmd = [
-        "uv",
-        "export",
-        "--no-hashes",
-        "--no-sources",
-        "--no-header",
-        "--no-dev",
-        "--no-emit-project",
-        "--locked",
+    lines = [
+        "Dockerfile not found in the project root directory.",
+        "  agent_runtime deploys a container image, which requires a Dockerfile.",
     ]
+    if scaffold_older_than(cfg, _CONTAINER_RUNTIME_VERSION):
+        version = cfg.acli_version
+        lines += [
+            "",
+            f"  This project was scaffolded with agents-cli {version}, before",
+            "  agent_runtime used containers. Either:",
+            "    • migrate the project:  agents-cli scaffold upgrade",
+            "    • or deploy with the version it was built for:",
+            f"        uvx google-agents-cli@{version} deploy",
+        ]
+    else:
+        lines += [
+            "  Run `agents-cli scaffold upgrade` to regenerate it, or recreate",
+            "  the project with `agents-cli create`.",
+        ]
+    return "\n".join(lines)
 
-    # Try with --no-annotate first (newer uv)
-    result = run_resolved(
-        [*base_cmd, "--no-annotate"],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        # Fall back without --no-annotate (older uv)
-        result = run_resolved(
-            base_cmd,
+
+def _git_tracked_packages() -> list[str]:
+    """Files git would package (tracked + untracked, honoring .gitignore), or an
+    empty list if git is unavailable or this is not a repo.
+
+    Listed-but-missing files (deleted, not yet committed) are dropped so
+    packaging doesn't fail, with a warning so the discrepancy stays visible.
+    """
+    try:
+        res = run_resolved(
+            ["git", "ls-files", "--cached", "--others", "--exclude-standard"],
             capture_output=True,
             text=True,
+            check=True,
         )
-
-    if result.returncode != 0:
-        raise click.ClickException(
-            f"Failed to generate requirements file via 'uv export'.\n"
-            f"  stderr: {result.stderr.strip()}\n"
-            f"  Ensure 'uv' is installed and your project has a valid uv.lock.\n"
-            f"  Alternatively, pass --requirements-file with a pre-built file."
+    except (ToolNotFoundError, subprocess.CalledProcessError, OSError):
+        return []
+    listed = [f.strip() for f in res.stdout.strip().split("\n") if f.strip()]
+    missing = [f for f in listed if not os.path.exists(f)]
+    if missing:
+        logging.warning(
+            "Skipping %d git-tracked file(s) missing on disk: %s",
+            len(missing),
+            ", ".join(missing),
         )
+    return [f for f in listed if os.path.exists(f)]
 
-    with open(requirements_path, "w", encoding="utf-8") as f:
-        f.write(result.stdout)
 
-    click.echo(f"  📦 Auto-generated requirements: {requirements_path}")
+def _fallback_packages(agent_dir: str) -> list[str]:
+    """Fixed package list (mirroring the default Dockerfile's COPY set) for when
+    git can't enumerate the tree."""
+    candidates = [
+        f"./{agent_dir}",
+        "pyproject.toml",
+        "Dockerfile",
+        "README.md",
+        "uv.lock",
+    ]
+    return [p for p in candidates if os.path.exists(p)]
 
 
 def deploy_agent_runtime(
     *,
     cfg: ProjectConfig,
     project: str,
-    display_name: str,
+    display_name: str | None = None,
     location: str = "us-east1",
     description: str = "",
-    source_packages: tuple[str, ...] | None = None,
-    entrypoint_module: str | None = None,
-    entrypoint_object: str = "agent_runtime",
-    requirements_file: str | None = None,
+    source_packages: list[str] | None = None,
     set_env_vars: str | None = None,
     set_secrets: str | None = None,
     labels: str | None = None,
@@ -374,6 +335,8 @@ def deploy_agent_runtime(
     agent_identity: bool = False,
     no_wait: bool = False,
     psc_interface_config: dict | None = None,
+    build_args: str | None = None,
+    port: int | None = None,
 ) -> AgentEngine | None:
     """Deploy the agent to Vertex AI Agent Runtime.
 
@@ -384,9 +347,6 @@ def deploy_agent_runtime(
         location: GCP region.
         description: Description of the agent.
         source_packages: Source packages to deploy.
-        entrypoint_module: Python module path for the agent entrypoint.
-        entrypoint_object: Name of the agent instance at module level.
-        requirements_file: Path to requirements.txt file.
         set_env_vars: Comma-separated KEY=VALUE env vars.
         set_secrets: Comma-separated ENV_VAR=SECRET_ID pairs.
         labels: Comma-separated KEY=VALUE labels.
@@ -396,12 +356,13 @@ def deploy_agent_runtime(
         cpu: CPU limit.
         memory: Memory limit.
         container_concurrency: Container concurrency.
-        num_workers: Number of worker processes.
         agent_identity: Enable agent identity.
         no_wait: If True, start the deployment and return immediately.
         psc_interface_config: PSC interface configuration dict for private
             VPC connectivity. Contains ``network_attachment`` and optionally
             ``dns_peering_configs``.
+        build_args: Comma-separated KEY=VALUE build args.
+        port: Container port.
 
     Returns:
         The deployed AgentEngine instance, or None when no_wait is True.
@@ -413,14 +374,17 @@ def deploy_agent_runtime(
         )
 
     agent_dir = cfg.agent_directory
-    source_packages = source_packages or (f"./{agent_dir}",)
-    entrypoint_module = entrypoint_module or f"{agent_dir}.agent_runtime_app"
+    display_name = display_name or resolve_service_name(cfg, None)
 
-    # Auto-generate requirements.txt if not explicitly provided
-    requirements_file_explicit = requirements_file is not None
-    requirements_file = requirements_file or f"{agent_dir}/app_utils/.requirements.txt"
-    if not requirements_file_explicit:
-        _generate_requirements_file(requirements_file)
+    # Agent Runtime builds the container image from the project's Dockerfile, so
+    # prefer what git would package (tracked + untracked, .gitignore-honored) and
+    # fall back to a fixed list when git can't enumerate the tree.
+    source_packages = (
+        source_packages or _git_tracked_packages() or _fallback_packages(agent_dir)
+    )
+
+    if not os.path.exists("Dockerfile"):
+        raise click.ClickException(_missing_dockerfile_error(cfg))
 
     # Parse CLI environment variables, secrets, and labels
     secrets = parse_secrets(set_secrets)
@@ -429,16 +393,10 @@ def deploy_agent_runtime(
     env_vars = _build_runtime_env_vars(
         set_env_vars=set_env_vars,
         secrets=secrets,
-        num_workers=num_workers,
+        port=port,
     )
 
-    print("""
-    ╔═══════════════════════════════════════════════════════════╗
-    ║                                                           ║
-    ║   🤖 DEPLOYING AGENT TO VERTEX AI AGENT ENGINE 🤖         ║
-    ║                                                           ║
-    ╚═══════════════════════════════════════════════════════════╝
-    """)
+    click.echo("\n🤖 Deploying agent to Agent Runtime...\n")
 
     # Log deployment parameters
     click.echo("\n📋 Deployment Parameters:")
@@ -467,13 +425,12 @@ def deploy_agent_runtime(
                     f"{dc.get('domain', '')} → {dc.get('target_project', '')}/{dc.get('target_network', '')}",
                 )
             )
+    if port:
+        params.append(("Port", port))
+    if build_args:
+        params.append(("Build Args", build_args))
     for name, value in params:
         click.echo(f"  {name}: {value}")
-    if env_vars:
-        click.echo("\n🌍 Environment Variables:")
-        for key, value in sorted(env_vars.items()):
-            click.echo(f"  {key}: {format_env_value(value)}")
-
     source_packages_list = list(source_packages)
 
     # Initialize vertexai client
@@ -485,23 +442,12 @@ def deploy_agent_runtime(
     )
     vertexai.init(project=project, location=location)
 
-    # Introspect agent via subprocess delegation — runs in the project's
-    # own venv so the CLI doesn't need the project's dependencies.
-    logging.info(f"Introspecting {entrypoint_module}.{entrypoint_object} via subprocess")
-    class_methods_list = _introspect_agent_via_subprocess(
-        entrypoint_module, entrypoint_object
-    )
-
     config_kwargs: dict[str, Any] = {
         "display_name": display_name,
         "description": description,
         "source_packages": source_packages_list,
-        "entrypoint_module": entrypoint_module,
-        "entrypoint_object": entrypoint_object,
-        "class_methods": class_methods_list,
         "env_vars": env_vars,
         "service_account": service_account,
-        "requirements_file": requirements_file,
         "labels": labels_dict,
         "min_instances": min_instances,
         "max_instances": max_instances,
@@ -510,9 +456,20 @@ def deploy_agent_runtime(
         "identity_type": IdentityType.AGENT_IDENTITY if agent_identity else None,
     }
 
+    # Agent Engine builds and serves the container over HTTP, so no entrypoint
+    # module or class-method spec is needed — just the image build config.
+    image_spec_dict: dict[str, Any] = {}
+    build_args_dict = parse_key_value_pairs(build_args)
+    if port:
+        build_args_dict.setdefault("PORT", str(port))
+    if build_args_dict:
+        image_spec_dict["build_args"] = build_args_dict
+    config_kwargs["image_spec"] = image_spec_dict
+
     # The Console uses agent_framework to decide which playground to render.
-    # Set explicitly — the unset default does not map to "custom".
-    config_kwargs["agent_framework"] = "custom" if cfg.is_a2a else "google-adk"
+    # The unified app is a google-adk container (it serves the native ADK
+    # reasoning_engine contract), matching the terraform deploy path.
+    config_kwargs["agent_framework"] = "google-adk"
 
     if psc_interface_config is not None:
         config_kwargs["psc_interface_config"] = psc_interface_config
@@ -531,22 +488,34 @@ def deploy_agent_runtime(
     if agent_identity and not matching_agents:
         matching_agents = [setup_agent_identity(client, project, display_name)]
 
+    if matching_agents:
+        resource_name = matching_agents[0].api_resource.name
+        # Preserve env vars set outside this deploy; CLI/user values still win.
+        for key, value in _existing_plain_env_vars(matching_agents[0]).items():
+            env_vars.setdefault(key, value)
+        # Point the A2A agent card at the real Agent Engine HTTP passthrough
+        # instead of localhost; needs the existing engine's resource name, so a
+        # first-time create picks it up on the next deploy.
+        env_vars.setdefault(
+            "APP_URL",
+            f"https://{location}-aiplatform.googleapis.com/reasoningEngines/v1/"
+            f"{resource_name}/api",
+        )
+        # config_kwargs holds this same env_vars dict; rebuild to apply the edits.
+        config = AgentEngineConfig(**config_kwargs)
+
+    if env_vars:
+        click.echo("\n🌍 Environment Variables:")
+        for key, value in sorted(env_vars.items()):
+            click.echo(f"  {key}: {format_env_value(value)}")
+
     # Deploy (create or update)
     action = "Updating" if matching_agents else "Creating"
 
     if no_wait:
         click.echo(f"\n🚀 {action} agent: {display_name} (returning immediately)...")
-        operation = _start_deploy_operation(
-            client,
-            config,
-            matching_agents,
-            action="update" if matching_agents else "create",
-        )
-        write_operation(
-            operation_name=operation.name,
-            project=project,
-            location=location,
-            deployment_target="agent_runtime",
+        operation = _start_and_record_operation(
+            client, config, matching_agents, project, location
         )
         click.echo(f"\n📋 Operation started: {operation.name}")
         click.echo("   Check status with: agents-cli deploy --status")
@@ -554,17 +523,8 @@ def deploy_agent_runtime(
 
     click.echo(f"\n🚀 {action} agent: {display_name} (this can take 5-10 minutes)...")
 
-    operation = _start_deploy_operation(
-        client,
-        config,
-        matching_agents,
-        action="update" if matching_agents else "create",
-    )
-    write_operation(
-        operation_name=operation.name,
-        project=project,
-        location=location,
-        deployment_target="agent_runtime",
+    operation = _start_and_record_operation(
+        client, config, matching_agents, project, location
     )
     click.echo(f"   Operation: {operation.name}")
     click.echo(
@@ -650,6 +610,7 @@ def _start_deploy_operation(
         identity_type=config.identity_type,
         agent_framework=config.agent_framework,
         psc_interface_config=config.psc_interface_config,
+        image_spec=config.image_spec,
     )
 
     if matching_agents:
@@ -658,6 +619,30 @@ def _start_deploy_operation(
             config=api_config,
         )
     return client.agent_engines._create(config=api_config)
+
+
+def _start_and_record_operation(
+    client: Any,
+    config: AgentEngineConfig,
+    matching_agents: list[Any],
+    project: str,
+    location: str,
+) -> Any:
+    """Start the create/update operation and persist it so ``deploy --status``
+    can recover it if the command is interrupted."""
+    operation = _start_deploy_operation(
+        client,
+        config,
+        matching_agents,
+        action="update" if matching_agents else "create",
+    )
+    write_operation(
+        operation_name=operation.name,
+        project=project,
+        location=location,
+        deployment_target="agent_runtime",
+    )
+    return operation
 
 
 def check_agent_runtime_operation(

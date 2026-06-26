@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.0] - 2026-06-23
+- Agent Runtime deploys now serve ADK web, A2A, and the reasoning engine from a single unified container app.
+- Cloud Trace spans no longer capture LLM prompts and responses, keeping sensitive content out of traces.
+- Refreshed the bundled skills: correctness fixes, de-duplication, and a leaner always-active workflow guide, plus a2ui documented in the ADK code cheatsheet.
+
 ## [0.5.1] - 2026-06-18
 - Fixed run and playground commands on Windows
   - https://github.com/google/agents-cli/issues/34

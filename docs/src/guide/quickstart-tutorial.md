@@ -164,7 +164,7 @@ The skills gave your coding agent the context to make the right decisions at eac
 Try building something more complex:
 
 - Add tools — *"Add a Google Search tool so the caveman can grunt about current events"*
-- Multi-agent — *"Create an A2A agent that other agents can talk to"* (use `adk_a2a` template)
+- Multi-agent — *"Create an A2A agent that other agents can talk to"* (use the `adk` template — A2A is built in)
 - RAG — *"Build an agent that answers questions from our docs"* (use `agentic_rag` template)
 
 See [Agent Templates](templates.md) for all options, or jump to the [Development Guide](development.md) for the full workflow.

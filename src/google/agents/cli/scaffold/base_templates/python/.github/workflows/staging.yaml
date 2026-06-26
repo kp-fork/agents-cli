@@ -92,7 +92,7 @@ jobs:
           gsutil cp {{ cookiecutter.wheel_gcs_uri }} /tmp/
           uvx --from /tmp/{{ cookiecutter.wheel_gcs_uri.split('/')[-1] }} google-agents-cli deploy \
 {%- else %}
-          uvx google-agents-cli deploy \
+          uvx google-agents-cli{{ cookiecutter.agents_cli_version_pin }} deploy \
 {%- endif %}
             --project {% raw %}${{ vars.STAGING_PROJECT_ID }}{% endraw %} \
             --region {% raw %}${{ vars.REGION }}{% endraw %} \
@@ -131,7 +131,7 @@ jobs:
           gsutil cp {{ cookiecutter.wheel_gcs_uri }} /tmp/
           uvx --from /tmp/{{ cookiecutter.wheel_gcs_uri.split('/')[-1] }} google-agents-cli deploy \
 {%- else %}
-          uvx google-agents-cli deploy \
+          uvx google-agents-cli{{ cookiecutter.agents_cli_version_pin }} deploy \
 {%- endif %}
             --project {% raw %}${{ vars.STAGING_PROJECT_ID }}{% endraw %} \
             --region {% raw %}${{ vars.REGION }}{% endraw %} \
@@ -163,7 +163,7 @@ jobs:
           gsutil cp {{ cookiecutter.wheel_gcs_uri }} /tmp/
           uvx --from /tmp/{{ cookiecutter.wheel_gcs_uri.split('/')[-1] }} google-agents-cli deploy \
 {%- else %}
-          uvx google-agents-cli deploy \
+          uvx google-agents-cli{{ cookiecutter.agents_cli_version_pin }} deploy \
 {%- endif %}
             --project {% raw %}${{ vars.STAGING_PROJECT_ID }}{% endraw %} \
             --region {% raw %}${{ vars.REGION }}{% endraw %} \
@@ -183,7 +183,7 @@ jobs:
 {%- if cookiecutter.deployment_target == 'cloud_run' %}
           export _ID_TOKEN="{% raw %}${{ steps.fetch-token.outputs._id_token }}{% endraw %}"
           export _STAGING_URL="{% raw %}${{ steps.fetch-url.outputs._staging_url }}{% endraw %}"
-          uvx{%- if cookiecutter.is_a2a %} --with "a2a-sdk~=0.3.22"{%- endif %} locust==2.31.1 \
+          uvx locust==2.31.1 \
           -f tests/load_test/load_test.py \
           --headless \
           -H ${_STAGING_URL} \
@@ -191,7 +191,7 @@ jobs:
           --csv=tests/load_test/.results/results \
           --html=tests/load_test/.results/report.html
 {%- elif cookiecutter.deployment_target == 'gke' %}
-          uvx{%- if cookiecutter.is_a2a %} --with "a2a-sdk~=0.3.22"{%- endif %} locust==2.31.1 \
+          uvx locust==2.31.1 \
           -f tests/load_test/load_test.py \
           --headless \
           -H http://127.0.0.1:8080 \

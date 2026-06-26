@@ -246,7 +246,9 @@ def _execute_with_saved_config(
         cmd = ["uvx", f"google-agents-cli@{project_version}", *args]
     else:
         console.print("✅ Using saved configuration", style="dim")
-        cmd = ["agents-cli", *args]
+        # Reinvoke ourselves via the module entry point: always importable when
+        # the CLI is installed, regardless of how it was originally launched.
+        cmd = [sys.executable, "-m", "google.agents.cli.main", *args]
 
     logging.debug(f"Executing command: {shlex.join(cmd)}")
 
@@ -601,9 +603,13 @@ def _build_enhance_create_args(
     if not cli_overrides:
         return args
 
-    # Merge CLI overrides (these take precedence over saved config)
+    # Merge CLI overrides (these take precedence over saved config).
+    # ``deployment_target`` is exempt from the skip-sentinel check because
+    # users legitimately switch targets via ``enhance --deployment-target X``
+    # and the value happens to share a name with sentinel-skip patterns
+    # used elsewhere (e.g. "none", "skip").
     for key, value in cli_overrides.items():
-        if _should_skip_config_value(value):
+        if key != "deployment_target" and _should_skip_config_value(value):
             continue
 
         # base_template maps to --agent in the create command
@@ -753,7 +759,8 @@ def _run_smart_merge(
         metadata_updates = {
             k: v
             for k, v in cli_overrides.items()
-            if isinstance(v, str) and not _should_skip_config_value(v)
+            if isinstance(v, str)
+            and (k == "deployment_target" or not _should_skip_config_value(v))
         }
         stale_keys = _stale_manifest_keys_for_target(cli_overrides, project_config)
 
@@ -902,7 +909,8 @@ def enhance(
     # replays the same params, so smart-merge would compare identical templates).
     is_saved_config_subprocess = os.environ.get(_ENV_USING_SAVED_CONFIG) == "1"
     has_cli_overrides = any(
-        not _should_skip_config_value(v) for v in cli_override_args.values()
+        k == "deployment_target" or not _should_skip_config_value(v)
+        for k, v in cli_override_args.items()
     )
 
     if dry_run and force:

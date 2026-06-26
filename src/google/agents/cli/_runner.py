@@ -91,7 +91,19 @@ def run(
 
     if check and result.returncode != 0:
         error_msg = check_err_msg or f"Command failed: {cmd_str}"
-        raise click.ClickException(f"{error_msg} (exit code {result.returncode})")
+        # When output was captured it never reached the console, so fold it into
+        # the error — otherwise the failure reason is lost. Streamed runs already
+        # printed it. stdout/stderr are bytes when input_data is set (text=False).
+        detail = ""
+        if capture:
+            captured = "\n".join(
+                part.strip()
+                for part in (result.stdout, result.stderr)
+                if isinstance(part, str) and part.strip()
+            )
+            if captured:
+                detail = f"\n{captured}"
+        raise click.ClickException(f"{error_msg} (exit code {result.returncode}){detail}")
 
     return result
 

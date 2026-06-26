@@ -31,10 +31,11 @@ from rich.console import Console
 from rich.prompt import Confirm, IntPrompt, Prompt
 
 from .datastores import DATASTORES
+from .lock_utils import get_lock_filename
 from .remote_template import (
     get_base_template_name,
 )
-from .version import get_current_version
+from .version import agents_cli_version_pin, get_current_version
 
 # =============================================================================
 # Agent Name Aliases (Backwards Compatibility)
@@ -46,7 +47,8 @@ from .version import get_current_version
 
 AGENT_ALIASES: dict[str, str] = {
     "adk_base": "adk",
-    "adk_a2a_base": "adk_a2a",
+    "adk_a2a_base": "adk",
+    "adk_a2a": "adk",
 }
 
 
@@ -89,8 +91,6 @@ CONDITIONAL_FILES = {
     "deployment/terraform/cicd/wif.tf": (
         lambda c: c.get("cicd_runner") == "github_actions"
     ),
-    # Agent-specific conditional files
-    "tests/helpers.py": lambda c: c.get("is_a2a"),
     # Data ingestion conditional (only for agent_platform_vector_search)
     "data_ingestion": lambda c: c.get("datastore_type") == "agent_platform_vector_search",
     # Datastore-specific terraform files (agent_platform_search vs agent_platform_vector_search)
@@ -321,10 +321,10 @@ def add_base_template_dependencies(
 
     # Show what dependencies will be added
     console.print(
-        f"\n✓ Base template override: Using '{base_template_name}' as foundation",
+        f"\n✓ Ensuring base template '{base_template_name}' dependencies",
         style="bold cyan",
     )
-    console.print("  This requires adding the following dependencies:", style="white")
+    console.print("  Adding the following dependencies:", style="white")
     for dep in base_dependencies:
         console.print(f"    • {dep}", style="yellow")
 
@@ -457,7 +457,6 @@ def get_available_agents(
     # Define display order for agents within each group
     PRIORITY_ORDER = {
         "adk": 0,
-        "adk_a2a": 1,
         "agentic_rag": 2,
     }
 
@@ -1419,10 +1418,12 @@ def process_template(
                 generate_java_package_vars(project_name) if language == "java" else {}
             )
 
+            current_version = get_current_version()
+
             cookiecutter_config = {
                 "project_name": project_name,
                 "agent_name": agent_name,
-                "package_version": get_current_version(),
+                "package_version": current_version,
                 "generated_at": datetime.now(tz=UTC).isoformat(),
                 "agent_description": template_config.get("description", ""),
                 "example_question": template_config.get("example_question", "").ljust(61),
@@ -1451,6 +1452,7 @@ def process_template(
                 "java_package_path": java_vars.get("java_package_path", ""),
                 "bq_analytics": bq_analytics,
                 "wheel_gcs_uri": os.environ.get("WHEEL_GCS_URI", ""),
+                "agents_cli_version_pin": agents_cli_version_pin(),
                 "agent_guidance_filename": agent_guidance_filename,
                 "_copy_without_render": [
                     "*.ipynb",  # Don't render notebooks
@@ -1675,12 +1677,12 @@ def process_template(
                         shutil.copy2(remote_uv_lock, final_destination / "uv.lock")
                         logging.debug("Used uv.lock from remote template")
                 elif deployment_target and deployment_target != "none":
-                    # For local templates, use the existing logic
+                    # For local templates, use the existing logic.
                     lock_path = (
                         pathlib.Path(__file__).parent.parent
                         / "resources"
                         / "locks"
-                        / f"uv-{agent_name}-{deployment_target}.lock"
+                        / get_lock_filename(agent_name, deployment_target)
                     )
                     logging.debug(f"Looking for lock file at: {lock_path}")
                     logging.debug(f"Lock file exists: {lock_path.exists()}")

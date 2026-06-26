@@ -177,7 +177,7 @@ def validate_base_template(base_template: str) -> bool:
         True if the base template exists, False otherwise
     """
     available_templates = get_available_base_templates()
-    return base_template in available_templates
+    return template.resolve_agent_alias(base_template) in available_templates
 
 
 def get_standard_ignore_patterns() -> Callable[[str, list[str]], list[str]]:
@@ -609,22 +609,11 @@ def create(
         logging.debug(f"Selected agent: {final_agent}")
 
     # Load template configuration based on whether it's remote or local
-    # Track original base template to detect actual overrides (not just selection)
-    original_base_template: str | None = None
     if template_source_path:
         # Prepare CLI overrides for remote template config
         # Initialize cli_overrides if not provided (e.g., from enhance command)
         if cli_overrides is None:
             cli_overrides = {}
-
-        # First, get the original base template BEFORE applying cli_overrides
-        # This allows us to detect if user is actually overriding vs selecting same
-        original_config = remote_template.load_remote_template_config(
-            template_source_path,
-            None,  # No CLI overrides to get original value
-            is_adk_sample=remote_spec.is_adk_samples if remote_spec else False,
-        )
-        original_base_template = remote_template.get_base_template_name(original_config)
 
         if base_template:
             # Validate that the base template exists
@@ -639,7 +628,7 @@ def create(
                     style="yellow",
                 )
                 raise click.Abort()
-            cli_overrides["base_template"] = base_template
+            cli_overrides["base_template"] = template.resolve_agent_alias(base_template)
 
         # Load remote template config with CLI overrides
         source_config = remote_template.load_remote_template_config(
@@ -992,33 +981,24 @@ def create(
         if region != "us-east1":
             replace_region_in_files(project_path, region, debug=debug)
 
-        # Handle base template dependencies if override was used
-        # Skip if --skip-deps is set (used when reusing saved config)
-        # Only trigger if the base template is ACTUALLY different from the original
-        # (not just selected from interactive menu but same as default)
-        is_actual_override = (
-            base_template
-            and original_base_template
-            and base_template != original_base_template
-        )
-        if (
-            is_actual_override
-            and base_template
-            and template_source_path
-            and remote_config
-            and not skip_deps
-        ):
-            # Load base template config to get extra_dependencies
-            base_template_path = template.get_template_path(base_template, debug=debug)
+        # Remote templates inherit base-template files (app_utils/a2a.py,
+        # fast_api_app.py, the integration e2e tests) that import packages the
+        # remote's own pyproject may not declare — the config merge lets the
+        # remote override the base template's extra_dependencies. Re-add the
+        # resolved base template's deps on the fly so the inherited code (e.g.
+        # `import a2a`) resolves. Skip with --skip-deps (reusing a saved config).
+        if remote_config and not skip_deps:
+            base_template_path = template.get_template_path(
+                base_template_name, debug=debug
+            )
             base_config = template.load_template_config(base_template_path)
             base_deps = base_config.get("settings", {}).get("extra_dependencies", [])
 
             if base_deps:
-                # Call interactive dependency addition
                 template.add_base_template_dependencies(
                     project_path,
                     base_deps,
-                    base_template,
+                    base_template_name,
                     auto_approve=auto_approve,
                     interactive=interactive,
                 )

@@ -14,7 +14,7 @@
 
 import logging
 import os
-{%- if cookiecutter.is_a2a %}
+{%- if cookiecutter.deployment_target != 'agent_runtime' %}
 
 import google.auth
 from google.adk.cli.api_server import _setup_instrumentation_lib_if_installed
@@ -24,7 +24,9 @@ from google.adk.telemetry.setup import maybe_set_otel_providers
 
 
 def setup_telemetry() -> str | None:
-    """Configure OpenTelemetry and GenAI telemetry with GCS upload."""
+    """Configure GenAI prompt/response logging via OpenTelemetry."""
+    # Keep full prompts/responses out of trace span attributes (use GenAI logging instead).
+    os.environ.setdefault("ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS", "false")
 {%- if cookiecutter.deployment_target == 'agent_runtime' %}
     os.environ.setdefault("GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY", "true")
 {%- endif %}
@@ -57,7 +59,7 @@ def setup_telemetry() -> str | None:
         logging.info(
             "Prompt-response logging disabled (set LOGS_BUCKET_NAME=gs://your-bucket and OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=NO_CONTENT to enable)"
         )
-{%- if cookiecutter.is_a2a %}
+{%- if cookiecutter.deployment_target != 'agent_runtime' %}
 
     # Set up OpenTelemetry exporters for Cloud Trace and Cloud Logging
     credentials, project_id = google.auth.default()
@@ -78,3 +80,26 @@ def setup_telemetry() -> str | None:
 {%- endif %}
 
     return bucket
+
+{%- if cookiecutter.deployment_target == 'agent_runtime' %}
+
+
+def setup_agent_engine_telemetry() -> None:
+    """Install the Agent Engine tracer provider (traces/logs to the customer project).
+
+    Tags spans with the reasoningEngine resource. The OTel resource is fixed at
+    provider creation, so this must run before get_fast_api_app to set the tags.
+    No-op unless GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY is set.
+    """
+    if os.environ.get("GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY", "").lower() not in (
+        "true",
+        "1",
+    ):
+        return
+
+    import google.auth
+    from vertexai.agent_engines.templates.adk import _default_instrumentor_builder
+
+    _, project_id = google.auth.default()
+    _default_instrumentor_builder(project_id, enable_tracing=True, enable_logging=True)
+{%- endif %}

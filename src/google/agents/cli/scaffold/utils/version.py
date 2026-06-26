@@ -61,6 +61,19 @@ def get_current_version() -> str:
         return UNKNOWN_VERSION
 
 
+def agents_cli_version_pin() -> str:
+    """Return the version suffix to pin `google-agents-cli` in generated projects.
+
+    Renders to `@<version>` for released builds and to an empty string for the
+    `0.0.0` unknown-version sentinel, so local renders against an uninstalled
+    package leave the deploy steps using an unpinned `google-agents-cli`.
+    """
+    current_version = get_current_version()
+    if current_version == UNKNOWN_VERSION:
+        return ""
+    return f"@{current_version}"
+
+
 def get_latest_version() -> str:
     """Get the latest version available on PyPI."""
     try:

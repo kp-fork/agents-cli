@@ -186,7 +186,12 @@ def _resolve_deploy_service_name(
     default=False,
     help="Enable Identity-Aware Proxy (Cloud Run).",
 )
-@click.option("--port", default=None, type=int, help="Container port (Cloud Run).")
+@click.option(
+    "--port",
+    default=None,
+    type=int,
+    help="Container port (Cloud Run / Agent Runtime).",
+)
 @click.option(
     "--memory",
     default=None,
@@ -239,6 +244,12 @@ def _resolve_deploy_service_name(
     "--image",
     default=None,
     help="Container image URI (Cloud Run / GKE). Skips source build.",
+)
+@click.option(
+    "--build-args",
+    default=None,
+    help="Comma-separated KEY=VALUE args passed to the container image build "
+    "(Agent Runtime).",
 )
 @click.option(
     "--cluster-name",
@@ -339,6 +350,7 @@ def cmd_deploy(
     dns_peering_domain,
     dns_peering_project,
     dns_peering_network,
+    build_args,
 ):
     """Deploy the agent.
 
@@ -443,6 +455,18 @@ def cmd_deploy(
             f"(current target: {cfg.deployment_target})."
         )
 
+    # Container-build flags split by target: Agent Runtime builds from the
+    # project Dockerfile (--build-args); Cloud Run / GKE take a prebuilt --image.
+    if build_args and cfg.deployment_target != "agent_runtime":
+        raise click.ClickException(
+            "The --build-args flag is only supported for Agent Runtime deployments."
+        )
+    if image and cfg.deployment_target == "agent_runtime":
+        raise click.ClickException(
+            "The --image flag is only supported for Cloud Run and GKE deployments. "
+            "Agent Runtime does not support prebuilt images."
+        )
+
     # CPU / memory / instance / concurrency sizing works on Agent Runtime and
     # Cloud Run, but on GKE these are configured via Terraform and the
     # HorizontalPodAutoscaler — reject them rather than silently ignoring.
@@ -506,6 +530,8 @@ def cmd_deploy(
             agent_identity=agent_identity,
             no_wait=no_wait,
             psc_interface_config=psc_interface_config,
+            build_args=build_args,
+            port=port,
             cpu=cpu,
             memory=memory,
             min_instances=min_instances,

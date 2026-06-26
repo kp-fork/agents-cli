@@ -32,7 +32,7 @@ gcloud config set project YOUR_DEV_PROJECT_ID
 agents-cli deploy
 ```
 
-The command reads your `deployment_target` from `pyproject.toml` and dispatches to the right flow:
+The command reads your `deployment_target` from `agents-cli-manifest.yaml` (under `create_params`) and dispatches to the right flow:
 
 | `deployment_target`  | What happens                                  |
 |----------------------|-----------------------------------------------|
@@ -70,12 +70,18 @@ agents-cli deploy --status  # Check deployment status
 
 ### Agent Runtime
 
-*Selected with `agents-cli create my-agent -d agent_runtime` or `deployment_target = "agent_runtime"` in `pyproject.toml`.*
+*Selected with `agents-cli create my-agent -d agent_runtime`, or `create_params.deployment_target: agent_runtime` in `agents-cli-manifest.yaml`.*
 
-Fully managed — no containers or infrastructure to manage:
+Fully managed runtime: you provide a `Dockerfile` (scaffolded for you) and Agent Engine builds and runs the container — no cluster or service to operate:
 
 ```bash
 agents-cli deploy --project my-gcp-project --region us-east1
+```
+
+Pass Docker build args or a container port; a prebuilt `--image` is not supported (Agent Runtime always builds from the Dockerfile):
+
+```bash
+agents-cli deploy --build-args KEY=VALUE --port 8080
 ```
 
 Check on an async deployment:
@@ -87,7 +93,7 @@ agents-cli deploy --status      # Check progress later
 
 ### Cloud Run
 
-*Selected with `agents-cli create my-agent -d cloud_run` or `deployment_target = "cloud_run"` in `pyproject.toml`.*
+*Selected with `agents-cli create my-agent -d cloud_run`, or `create_params.deployment_target: cloud_run` in `agents-cli-manifest.yaml`.*
 
 Builds a container from source and deploys as a Cloud Run service:
 
@@ -112,7 +118,7 @@ agents-cli deploy --image gcr.io/my-project/my-agent:v1
 
 ### GKE
 
-*Selected with `agents-cli create my-agent -d gke` or `deployment_target = "gke"` in `pyproject.toml`.*
+*Selected with `agents-cli create my-agent -d gke`, or `create_params.deployment_target: gke` in `agents-cli-manifest.yaml`.*
 
 Deploys to a GKE cluster using Terraform and kubectl:
 

@@ -201,7 +201,6 @@ tests/load_test/.results/*.csv
 .locust_env
 my_env.tfvars
 .saved_chats
-.requirements.txt
 .useful_repos/
 
 # A2A Inspector

@@ -468,10 +468,9 @@
       cmdCode.textContent = lines.join("\n");
 
       // Crude file-count estimate using the deltas we know about.
-      let fileCount = 72;
+      let fileCount = 71;
       if (c.datastore === "none") fileCount -= 14;     // strip data_ingestion + vector_search.tf
       if (c.cicd === "skip")      fileCount -= 18;     // strip .github/* + cicd terraform
-      if (c.target !== "agent_runtime") fileCount -= 1; // strip agent_runtime_app.py
       if (c.bq === "no")          fileCount -= 2;
       const pieces = [
         c.datastore !== "none" && "RAG pipeline",

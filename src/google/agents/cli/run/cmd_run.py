@@ -20,6 +20,7 @@ import asyncio
 import base64
 import json
 import mimetypes
+import re
 import uuid
 from pathlib import Path
 from typing import NamedTuple
@@ -43,6 +44,10 @@ from a2a.types import (
 )
 from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
 
+from google.agents.cli._agent_runtime_a2a import (
+    build_agent_runtime_a2a_base_url,
+    build_agent_runtime_a2a_card_url,
+)
 from google.agents.cli._project import (
     chdir_project_root,
     read_project_config,
@@ -58,6 +63,8 @@ from google.agents.cli.run._multimodal import (
 
 _AGENT_ENGINE_URL_FRAGMENT = "aiplatform.googleapis.com"
 _REASONING_ENGINE_PATH = "reasoningEngines"
+# A valid Agent Runtime host carries a location prefix: <location>-aiplatform.googleapis.com
+_AGENT_RUNTIME_HOST_RE = re.compile(rf".+-{re.escape(_AGENT_ENGINE_URL_FRAGMENT)}$")
 _ARTIFACTS_DIR = Path(".google-agents-cli") / "artifacts"
 
 
@@ -93,6 +100,7 @@ def _resolve_dispatch_target(
             raise click.UsageError(
                 "--mode is required when using --url. Choose from: a2a, adk"
             )
+        _validate_agent_runtime_url(url)
         if app_name:
             resolved = app_name
         else:
@@ -368,6 +376,53 @@ def _is_agent_runtime_url(url: str) -> bool:
     return _AGENT_ENGINE_URL_FRAGMENT in url and _REASONING_ENGINE_PATH in url
 
 
+def _validate_agent_runtime_url(url: str) -> None:
+    """Raise a helpful hint when *url* references an Agent Runtime resource but
+    its host is missing the required ``<location>-`` location prefix.
+
+    Agent Runtime endpoints are hosted at ``<location>-aiplatform.googleapis.com``.
+    A bare resource path (no host) or a host without the location prefix can't be
+    queried, so we point at the correct format instead of failing obscurely.
+    """
+    if _REASONING_ENGINE_PATH not in url:
+        return
+    if _AGENT_RUNTIME_HOST_RE.match(urlparse(url).hostname or ""):
+        return  # Host already carries a <location>- prefix.
+    raise click.UsageError(
+        "Detected an Agent Runtime URL with a missing location.\n"
+        "  The location must appear in the host. The correct format is:\n"
+        "    https://<LOCATION>-aiplatform.googleapis.com/v1/projects/<PROJECT>"
+        "/locations/<LOCATION>/reasoningEngines/<ID>"
+    )
+
+
+def _is_raw_agent_runtime_url(url: str) -> bool:
+    """``True`` for a bare Agent Runtime resource URL that still needs its
+    ``/api`` passthrough path built.
+
+    A URL already containing ``/api`` (the deployed APP_URL form served by the
+    container) or any non-Agent-Runtime URL returns ``False`` — those are used
+    as-is with ``/a2a/<app>`` (a2a) or ``/run_sse`` (adk) appended.
+    """
+    return _is_agent_runtime_url(url) and "/api" not in url
+
+
+def _parse_agent_runtime_service_url(service_url: str) -> tuple[str, str]:
+    """Split an Agent Runtime service URL into (location, runtime_resource).
+
+    Handles both the ``/v1/`` and ``/v1beta1/`` API path variants.
+    ``https://europe-west1-aiplatform.googleapis.com/v1/projects/123/locations/
+    europe-west1/reasoningEngines/456`` →
+    ``("europe-west1", "projects/123/locations/europe-west1/reasoningEngines/456")``.
+    """
+    host = urlparse(service_url).hostname or ""
+    location = host.split(f"-{_AGENT_ENGINE_URL_FRAGMENT}", 1)[0]
+    # Resource path follows the API version segment (v1, v1beta1, ...).
+    match = re.search(r"/v1[^/]*/(.+)", service_url)
+    runtime_resource = match.group(1) if match else service_url
+    return location, runtime_resource
+
+
 def _dispatch_query(
     service_url: str,
     message: str,
@@ -393,9 +448,14 @@ def _dispatch_query(
         URLs, ``/run_sse`` for everything else.
     """
     if mode == "a2a":
-        if _is_agent_runtime_url(service_url):
-            a2a_base = service_url.replace("/v1/", "/v1beta1/") + "/a2a"
-            card_url = f"{a2a_base}/v1/card"
+        if _is_raw_agent_runtime_url(service_url):
+            location, runtime_resource = _parse_agent_runtime_service_url(service_url)
+            a2a_base = build_agent_runtime_a2a_base_url(
+                location, runtime_resource, app_name
+            )
+            card_url = build_agent_runtime_a2a_card_url(
+                location, runtime_resource, app_name
+            )
         else:
             a2a_base = f"{service_url}/a2a/{app_name}"
             card_url = f"{a2a_base}{AGENT_CARD_WELL_KNOWN_PATH}"
@@ -408,7 +468,7 @@ def _dispatch_query(
             verbose=verbose,
         )
     elif mode == "adk":
-        if _is_agent_runtime_url(service_url):
+        if _is_raw_agent_runtime_url(service_url):
             _query_agent_runtime_sse(
                 service_url=service_url,
                 message=build_agent_runtime_message(message, files),

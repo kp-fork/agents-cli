@@ -18,7 +18,7 @@ uv run uvicorn {{cookiecutter.agent_directory}}.fast_api_app:app --host 0.0.0.0 
 Using another terminal tab, This is suggested to avoid conflicts with the existing application python environment.
 
 ```bash
-python3 -m venv .locust_env && source .locust_env/bin/activate && pip install locust==2.31.1{%- if cookiecutter.is_a2a %} a2a-sdk~=0.3.22{%- endif %}
+python3 -m venv .locust_env && source .locust_env/bin/activate && pip install locust==2.31.1
 ```
 
 **3. Execute the Load Test:**
@@ -59,7 +59,7 @@ kubectl port-forward svc/SERVICE_NAME 8080:8080 -n NAMESPACE &
 
 **2. (In another tab) Create virtual environment with Locust:**
 ```bash
-python3 -m venv .locust_env && source .locust_env/bin/activate && pip install locust==2.31.1{%- if cookiecutter.is_a2a %} a2a-sdk~=0.3.22{%- endif %}
+python3 -m venv .locust_env && source .locust_env/bin/activate && pip install locust==2.31.1
 ```
 
 **3. Execute the Load Test:**

@@ -16,6 +16,7 @@
 """Utility to register an Agent Runtime to Gemini Enterprise."""
 
 import json
+import logging
 import os
 import subprocess
 import tomllib
@@ -29,8 +30,9 @@ from packaging import version
 from rich.console import Console
 from rich.table import Table
 
+from google.agents.cli._agent_runtime_a2a import build_agent_runtime_a2a_card_url
 from google.agents.cli._output import emit
-from google.agents.cli._project import resolve_gcp_project
+from google.agents.cli._project import read_project_config, resolve_gcp_project
 from google.agents.cli._runner import run_resolved
 from google.agents.cli._tools import ToolNotFoundError
 from google.agents.cli.auth import get_access_token, get_id_token
@@ -405,12 +407,22 @@ def construct_agent_card_url_from_metadata(
             parsed = parse_agent_runtime_id(remote_agent_runtime_id)
             if parsed:
                 location = parsed["location"]
-                # Agent Runtime A2A endpoint format
-                agent_card_url = (
-                    f"https://{location}-aiplatform.googleapis.com/v1beta1/"
-                    f"{remote_agent_runtime_id}/a2a/v1/card"
+                # Prefer the agent_directory recorded at deploy time so publish
+                # works from outside the project dir; fall back to local config
+                # for metadata written before it was persisted.
+                agent_directory = metadata.get("agent_directory")
+                if not agent_directory:
+                    agent_directory = read_project_config().agent_directory
+                    logging.warning(
+                        "deployment_metadata.json has no 'agent_directory'; using "
+                        "'%s' from the local project config. If you are publishing "
+                        "from outside the project directory, the A2A card URL may be "
+                        "wrong — re-deploy to record agent_directory in the metadata.",
+                        agent_directory,
+                    )
+                return build_agent_runtime_a2a_card_url(
+                    location, remote_agent_runtime_id, agent_directory
                 )
-                return agent_card_url
 
     return None
 
@@ -1161,6 +1173,15 @@ def _list_gemini_enterprise_apps(project_id: str | None, interactive: bool) -> N
     console.print(table)
 
 
+def default_registration_type(*, is_a2a: bool, has_agent_card_url: bool) -> str:
+    """A2A when the agent serves an A2A card, otherwise ADK."""
+    if has_agent_card_url:
+        return "a2a"
+    if is_a2a:
+        return "a2a"
+    return "adk"
+
+
 def _finalize_registration(
     *,
     result: dict,
@@ -1342,13 +1363,11 @@ def register_gemini_enterprise(
     # Determine registration type (a2a vs adk)
     resolved_registration_type = registration_type
     if not resolved_registration_type:
-        if provided_agent_card_url:
-            # Agent card URL provided -> A2A
-            resolved_registration_type = "a2a"
-        elif metadata:
-            # Use metadata to determine type
-            is_a2a = metadata.get("is_a2a", False)
-            resolved_registration_type = "a2a" if is_a2a else "adk"
+        if provided_agent_card_url or metadata:
+            resolved_registration_type = default_registration_type(
+                is_a2a=metadata.get("is_a2a", False) if metadata else False,
+                has_agent_card_url=bool(provided_agent_card_url),
+            )
         elif interactive:
             # No metadata, no agent card URL - prompt user to choose
             console.print("[blue]No deployment metadata found.[/]")
@@ -1414,15 +1433,6 @@ def register_gemini_enterprise(
                 metadata.get("deployment_target", "cloud_run")
                 if metadata
                 else "cloud_run"
-            )
-
-        # A2A agents on Agent Runtime are not yet supported by Gemini Enterprise.
-        if deployment_target == "agent_runtime":
-            raise click.ClickException(
-                "A2A agents deployed on Agent Runtime cannot be published to Gemini Enterprise at this time.\n"
-                "Gemini Enterprise does not yet support invoking A2A agents hosted on Agent Runtime.\n\n"
-                "Alternative:\n"
-                "  - Deploy your A2A agent to Cloud Run instead and register with --deployment-target cloud_run"
             )
     else:
         # ADK mode - no agent_card_url needed

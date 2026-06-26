@@ -9,16 +9,8 @@ Agent generated with `agents-cli` version `{{ cookiecutter.package_version }}`
 {{cookiecutter.project_name}}/
 ├── {{cookiecutter.agent_directory}}/         # Core agent code
 │   ├── agent.py               # Main agent logic
-{%- if cookiecutter.deployment_target in ('cloud_run', 'gke') %}
 │   ├── fast_api_app.py        # FastAPI Backend server
-{%- elif cookiecutter.deployment_target == 'agent_runtime' %}
-│   ├── agent_runtime_app.py    # Agent Runtime application logic
-{%- endif %}
 │   └── app_utils/             # App utilities and helpers
-{%- if cookiecutter.is_a2a and cookiecutter.agent_name == 'custom_a2a' %}
-│       ├── executor/          # A2A protocol executor implementation
-│       └── converters/        # Message converters for A2A protocol
-{%- endif %}
 {%- if cookiecutter.cicd_runner == 'google_cloud_build' %}
 ├── .cloudbuild/               # CI/CD pipeline configurations for Google Cloud Build
 {%- elif cookiecutter.cicd_runner == 'github_actions' %}
@@ -90,9 +82,7 @@ You can also use features from the [ADK](https://adk.dev/) CLI with `uv run adk`
 | `agents-cli deploy`  | Deploy agent to Agent Runtime                                                                |
 | `agents-cli publish gemini-enterprise` | Register deployed agent to Gemini Enterprise                    |
 {%- endif -%}
-{%- if cookiecutter.is_a2a %}
 | [A2A Inspector](https://github.com/a2aproject/a2a-inspector) | Launch A2A Protocol Inspector                                                        |
-{%- endif %}
 {%- if cookiecutter.cicd_runner != 'skip' %}
 | `agents-cli infra single-project` | Set up single-project infrastructure using Terraform                              |
 {%- endif %}
@@ -131,10 +121,8 @@ To set up your production infrastructure, run `agents-cli infra cicd`.
 ## Observability
 
 Built-in telemetry exports to Cloud Trace, BigQuery, and Cloud Logging.
-{%- if cookiecutter.is_a2a %}
 
 ## A2A Inspector
 
 This agent supports the [A2A Protocol](https://a2a-protocol.org/). Use the [A2A Inspector](https://github.com/a2aproject/a2a-inspector) to test interoperability.
 See the [A2A Inspector docs](https://github.com/a2aproject/a2a-inspector) for details.
-{%- endif %}

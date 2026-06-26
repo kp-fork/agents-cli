@@ -63,7 +63,7 @@ steps:
         gsutil cp {{ cookiecutter.wheel_gcs_uri }} /tmp/
         uvx --from /tmp/{{ cookiecutter.wheel_gcs_uri.split('/')[-1] }} google-agents-cli deploy \
 {%- else %}
-        uvx google-agents-cli deploy \
+        uvx google-agents-cli{{ cookiecutter.agents_cli_version_pin }} deploy \
 {%- endif %}
           --project ${_PROD_PROJECT_ID} \
           --region ${_REGION} \
@@ -96,7 +96,7 @@ steps:
         gsutil cp {{ cookiecutter.wheel_gcs_uri }} /tmp/
         uvx --from /tmp/{{ cookiecutter.wheel_gcs_uri.split('/')[-1] }} google-agents-cli deploy \
 {%- else %}
-        uvx google-agents-cli deploy \
+        uvx google-agents-cli{{ cookiecutter.agents_cli_version_pin }} deploy \
 {%- endif %}
           --project ${_PROD_PROJECT_ID} \
           --region ${_REGION} \
@@ -124,7 +124,7 @@ steps:
         gsutil cp {{ cookiecutter.wheel_gcs_uri }} /tmp/
         uvx --from /tmp/{{ cookiecutter.wheel_gcs_uri.split('/')[-1] }} google-agents-cli deploy \
 {%- else %}
-        uvx google-agents-cli deploy \
+        uvx google-agents-cli{{ cookiecutter.agents_cli_version_pin }} deploy \
 {%- endif %}
           --project ${_PROD_PROJECT_ID} \
           --region ${_REGION} \

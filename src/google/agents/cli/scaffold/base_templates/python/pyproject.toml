@@ -5,11 +5,7 @@ description = ""
 authors = [
     {name = "Your Name", email = "your@email.com"},
 ]
-{# A2A on agent_runtime pins aiplatform to 1.149.0 (see [tool.uv] override, #}
-{# b/514362507); every other combination needs the ADK 2.x eval fix from #}
-{# 1.156.0 (b/519099536). #}
-{% set a2a_runtime = cookiecutter.is_a2a and cookiecutter.deployment_target == 'agent_runtime' -%}
-{% set aiplatform_floor = "1.149.0" if a2a_runtime else "1.156.0" -%}
+{% set aiplatform_floor = "1.156.0" %}
 dependencies = [
 {%- for dep in cookiecutter.extra_dependencies %}
     "{{ dep }}",
@@ -94,20 +90,6 @@ deprecated = "ignore"
 [tool.codespell]
 ignore-words-list = "rouge"
 skip = "./locust_env/*,uv.lock,.venv,./frontend,**/package-lock.json"
-
-{% if a2a_runtime -%}
-[tool.uv]
-# TODO(b/514362507): remove once google-adk supports a2a-sdk 1.0.
-# google-cloud-aiplatform 1.150+ dropped A2A 0.3.x support, breaking
-# Vertex Agent Runtime deploys for adk_a2a projects. Pin to 1.149.0
-# until ADK ships the a2a-sdk 1.0 compatibility shim (go/orcas-rfc-803).
-# Cloud Run / GKE A2A deploys serve via the a2a-sdk HTTP server and never
-# hit the agent_engines registration path, so they are not pinned.
-# To use eval features added in aiplatform 1.150+, either remove this
-# override (accepting the A2A deploy breakage) or bump the pinned
-# version, then re-run `agents-cli install`.
-override-dependencies = ["google-cloud-aiplatform==1.149.0"]
-{%- endif %}
 
 
 [build-system]

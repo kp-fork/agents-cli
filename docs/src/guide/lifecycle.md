@@ -126,7 +126,7 @@ The single-agent body works while the problem is small. Real production agents g
 
 Splitting helps for three reasons that show up in eval, deploy, and observe: smaller prompts make each agent more reliable, separate tool surfaces let you apply per-agent guardrails, and the trace tells you exactly which sub-agent took the bad turn.
 
-When the team needs to span processes — or call agents your team doesn't own — use the **[A2A protocol](https://a2a-protocol.org/)** as the wire format. Scaffold with `--agent adk_a2a` and any A2A-compatible agent (built with Agents CLI or not) can call yours, and yours can call theirs.
+When the team needs to span processes — or call agents your team doesn't own — use the **[A2A protocol](https://a2a-protocol.org/)** as the wire format. A2A is built into every ADK agent, so just scaffold normally (`--agent adk`): any A2A-compatible agent (built with Agents CLI or not) can call yours, and yours can call theirs.
 
 ### 4 · Evaluate
 
@@ -245,7 +245,7 @@ See [Observability](observability/index.md) for the full setup.
 
 ## Where to dig deeper
 
-- [Templates](templates.md) — full list of scaffold templates (`adk`, `adk_a2a`, `agentic_rag`, …)
+- [Templates](templates.md) — full list of scaffold templates (`adk`, `agentic_rag`, …)
 - [Project Structure](project-structure.md) — what each generated file does
 - [Development Guide](development.md) — day-to-day workflow
 - [Evaluation Guide](evaluation.md) — dataset schema, the eval-fix loop

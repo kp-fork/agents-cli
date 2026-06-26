@@ -14,6 +14,12 @@
 
 {%- if cookiecutter.datastore_type == "agent_platform_vector_search" %}
 from unittest.mock import MagicMock, patch
+{%- elif cookiecutter.datastore_type == "agent_platform_search" %}
+import os
+
+# Set before the agent import below: the search tool is built at import time, and
+# INTEGRATION_TEST=TRUE makes it use a mock instead of a real datastore client.
+os.environ.setdefault("INTEGRATION_TEST", "TRUE")
 {%- endif %}
 
 from google.adk.agents.run_config import RunConfig, StreamingMode

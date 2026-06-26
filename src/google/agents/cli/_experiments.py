@@ -25,6 +25,7 @@ class Experiment(NamedTuple):
 
 
 # Central registry of experiments: new experiment flags get added here.
+# No experiments are currently registered.
 _REGISTRY: dict[str, Experiment] = {}
 
 

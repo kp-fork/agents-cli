@@ -60,7 +60,7 @@ steps:
         gsutil cp {{ cookiecutter.wheel_gcs_uri }} /tmp/
         uvx --from /tmp/{{ cookiecutter.wheel_gcs_uri.split('/')[-1] }} google-agents-cli deploy \
 {%- else %}
-        uvx google-agents-cli deploy \
+        uvx google-agents-cli{{ cookiecutter.agents_cli_version_pin }} deploy \
 {%- endif %}
           --project ${_STAGING_PROJECT_ID} \
           --region ${_REGION} \
@@ -111,7 +111,7 @@ steps:
         gsutil cp {{ cookiecutter.wheel_gcs_uri }} /tmp/
         uvx --from /tmp/{{ cookiecutter.wheel_gcs_uri.split('/')[-1] }} google-agents-cli deploy \
 {%- else %}
-        uvx google-agents-cli deploy \
+        uvx google-agents-cli{{ cookiecutter.agents_cli_version_pin }} deploy \
 {%- endif %}
           --project ${_STAGING_PROJECT_ID} \
           --region ${_REGION} \
@@ -148,7 +148,7 @@ steps:
         gsutil cp {{ cookiecutter.wheel_gcs_uri }} /tmp/
         uvx --from /tmp/{{ cookiecutter.wheel_gcs_uri.split('/')[-1] }} google-agents-cli deploy \
 {%- else %}
-        uvx google-agents-cli deploy \
+        uvx google-agents-cli{{ cookiecutter.agents_cli_version_pin }} deploy \
 {%- endif %}
           --project ${_STAGING_PROJECT_ID} \
           --region ${_REGION} \
@@ -176,7 +176,7 @@ steps:
         export PATH="$$HOME/.local/bin:$$PATH"
         export _ID_TOKEN=$(cat id_token.txt)
         export _STAGING_URL=$(cat staging_url.txt)
-        uvx{%- if cookiecutter.is_a2a %} --with "a2a-sdk~=0.3.22"{%- endif %} locust==2.31.1 \
+        uvx locust==2.31.1 \
         -f tests/load_test/load_test.py \
         --headless \
         -H $$_STAGING_URL \
@@ -195,7 +195,7 @@ steps:
         kubectl port-forward svc/{{cookiecutter.project_name}} 8080:8080 -n {{cookiecutter.project_name}} &
         PF_PID=$$!
         sleep 5
-        uvx{%- if cookiecutter.is_a2a %} --with "a2a-sdk~=0.3.22"{%- endif %} locust==2.31.1 \
+        uvx locust==2.31.1 \
         -f tests/load_test/load_test.py \
         --headless \
         -H http://127.0.0.1:8080 \

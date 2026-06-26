@@ -9,7 +9,6 @@
 | Template | Description | Use Case |
 |----------|-------------|----------|
 | `adk` | ReAct agent using ADK | General-purpose conversational agent with tool use |
-| `adk_a2a` | ADK agent with A2A protocol | Distributed multi-agent systems that communicate across frameworks |
 | `agentic_rag` | ADK agent with RAG pipeline | Document Q&A with automated data ingestion |
 
 ### adk
@@ -20,13 +19,7 @@ The default template. Creates a ReAct agent using the [Agent Development Kit](ht
 agents-cli create my-agent --agent adk
 ```
 
-### adk_a2a
-
-Extends the base `adk` template with [Agent-to-Agent (A2A) protocol](https://a2a-protocol.org) support. Use this when your agent needs to interoperate with agents built on other frameworks (LangGraph, CrewAI, etc.) or when building a distributed multi-agent system.
-
-```bash
-agents-cli create my-agent --agent adk_a2a
-```
+Every Python ADK agent serves the [Agent-to-Agent (A2A) protocol](https://a2a-protocol.org) out of the box — the A2A routes (agent card + JSON-RPC) are mounted automatically. Use this when your agent needs to interoperate with agents built on other frameworks (LangGraph, CrewAI, etc.) or when building a distributed multi-agent system; no separate template or hand-written A2A code is required.
 
 ### agentic_rag
 

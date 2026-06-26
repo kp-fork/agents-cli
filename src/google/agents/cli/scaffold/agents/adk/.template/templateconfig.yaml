@@ -18,7 +18,13 @@ settings:
   requires_data_ingestion: false
   requires_session: true
   deployment_targets: ["agent_runtime", "cloud_run", "gke", "none"]
-  extra_dependencies: ["google-adk[gcp]>=2.0.0,<3.0.0"]
-  tags: ["adk"]
+  extra_dependencies:
+    - "google-adk[gcp]>=2.0.0,<3.0.0"
+    - "a2a-sdk[http-server]~=0.3.22"
+    # google-genai calls aiohttp.StreamReader.readline(max_line_length=...), added in
+    # aiohttp 3.13.4, but under-declares aiohttp>=3.10.11. Floor it so remote templates
+    # whose uv.lock pins an older aiohttp don't break the streaming path.
+    - "aiohttp>=3.13.4"
+  tags: ["adk", "a2a"]
   frontend_type: "None"
     

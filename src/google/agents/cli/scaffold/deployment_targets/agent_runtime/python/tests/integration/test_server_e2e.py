@@ -69,10 +69,6 @@ def start_server() -> subprocess.Popen[str]:
     ]
     env = os.environ.copy()
     env["INTEGRATION_TEST"] = "TRUE"
-{%- if cookiecutter.session_type == "agent_platform_sessions" %}
-    # Use in-memory session for local E2E tests instead of creating Agent Runtime
-    env["USE_IN_MEMORY_SESSION"] = "true"
-{%- endif %}
     process = subprocess.Popen(
         command,
         stdout=subprocess.PIPE,
@@ -240,33 +236,30 @@ def test_collect_feedback(server_fixture: subprocess.Popen[str]) -> None:
         FEEDBACK_URL, json=feedback_data, headers=HEADERS, timeout=10
     )
     assert response.status_code == 200
-{%- if cookiecutter.session_type == "agent_platform_sessions" %}
 
 
-@pytest.fixture(scope="session", autouse=True)
-def cleanup_agent_runtime_sessions() -> None:
-    """Cleanup agent engine sessions created during tests."""
-    yield  # Run tests first
+def test_reasoning_engine_stream(server_fixture: subprocess.Popen[str]) -> None:
+    """The reasoning_engine adapter (/api/stream_reasoning_engine) runs the agent.
 
-    # Cleanup after tests complete
-    from vertexai import agent_engines
+    This is the contract Agent Engine forwards :streamQuery calls to.
+    """
+    response = requests.post(
+        f"{BASE_URL}/api/stream_reasoning_engine",
+        headers=HEADERS,
+        json={
+            "class_method": "async_stream_query",
+            "input": {"user_id": f"u-{uuid.uuid4()}", "message": "Hi!"},
+        },
+        stream=True,
+        timeout=60,
+    )
+    assert response.status_code == 200
 
-    try:
-        # Use same environment variable as server, default to project name
-        default_agent_name = "{{cookiecutter.project_name}}"
-        agent_name = os.environ.get("AGENT_ENGINE_SESSION_NAME", default_agent_name)
-
-        # Find and delete agent engines with this name
-        existing_agents = list(agent_engines.list(filter=f"display_name={agent_name}"))
-
-        for agent_runtime in existing_agents:
-            try:
-                agent_engines.delete(resource_name=agent_runtime.name)
-                logger.info(f"Cleaned up agent engine: {agent_runtime.name}")
-            except Exception as e:
-                logger.warning(
-                    f"Failed to cleanup agent engine {agent_runtime.name}: {e}"
-                )
-    except Exception as e:
-        logger.warning(f"Failed to cleanup agent engine sessions: {e}")
-{%- endif %}
+    events = [json.loads(line) for line in response.text.splitlines() if line.strip()]
+    assert events, "No events from reasoning_engine adapter"
+    has_text = any(
+        (event.get("content") or {}).get("parts")
+        and any(part.get("text") for part in event["content"]["parts"])
+        for event in events
+    )
+    assert has_text, "No text content in reasoning_engine events"

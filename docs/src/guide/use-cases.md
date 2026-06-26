@@ -170,7 +170,7 @@ Build a RAG agent that drafts RFP responses by pulling from past proposals, curr
 
 ### Incident Response Coordination
 
-*Advanced (A2A) · `adk_a2a`*
+*Advanced (A2A) · `adk`*
 
 Run specialist agents in parallel during an outage: one bisects recent changes, one correlates errors across services, one searches past incidents, and one drafts customer communications. Parallel investigation reduces time-to-cause compared to sequential troubleshooting.
 
@@ -178,11 +178,11 @@ Run specialist agents in parallel during an outage: one bisects recent changes, 
 Build an A2A multi-agent system for incident response. Specialists for bisection, error correlation, past-incident lookup, and customer comms — coordinated in parallel.
 ```
 
-The [`adk_a2a` template](templates.md) wires up the A2A protocol. Each specialist runs as a service, and the coordinator orchestrates execution.
+The [`adk` template](templates.md) (A2A built in) exposes the A2A protocol. Each specialist runs as a service, and the coordinator orchestrates execution.
 
 ### Distributed Code Migration
 
-*Advanced (A2A) · `adk_a2a`*
+*Advanced (A2A) · `adk`*
 
 Run specialist agents for a large framework migration: one handles data models, one handles API contracts, one handles tests, and one handles validation. Specialists coordinate over A2A to share findings about breaking changes. GKE is the recommended runtime when running many concurrent specialist instances.
 
@@ -196,6 +196,6 @@ Build A2A specialist agents for a large framework migration: data models, API co
 
 - [Tutorial: Build Your First Agent](quickstart-tutorial.md) — build, evaluate, and deploy with your coding agent
 - [Project Structure](project-structure.md) — understand what each generated file does
-- [Agent Templates](templates.md) — choose the right template (`adk`, `adk_a2a`, `agentic_rag`)
+- [Agent Templates](templates.md) — choose the right template (`adk`, `agentic_rag`)
 - [Development Guide](development.md) — full development workflow
 - [CLI Reference](../cli/index.md) — all commands and flags

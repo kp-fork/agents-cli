@@ -68,7 +68,10 @@ def get_agent_configs(
     return agent_configs
 
 
-def get_lock_filename(agent_name: str, deployment_target: str) -> str:
+def get_lock_filename(
+    agent_name: str,
+    deployment_target: str,
+) -> str:
     """Generate the lock filename for a given agent and deployment target.
 
     Args:
@@ -81,7 +84,10 @@ def get_lock_filename(agent_name: str, deployment_target: str) -> str:
     return f"uv-{agent_name}-{deployment_target}.lock"
 
 
-def get_lock_path(agent_name: str, deployment_target: str) -> Path:
+def get_lock_path(
+    agent_name: str,
+    deployment_target: str,
+) -> Path:
     """Get the path to the appropriate lock file."""
     lock_filename = get_lock_filename(agent_name, deployment_target)
     return _scaffold_root() / "resources" / "locks" / lock_filename

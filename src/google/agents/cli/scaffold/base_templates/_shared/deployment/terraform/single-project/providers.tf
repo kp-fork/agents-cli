@@ -17,7 +17,7 @@ terraform {
   required_providers {
     google = {
       source  = "hashicorp/google"
-      version = "~> 7.13.0"
+      version = "~> 7.28.0"
     }
     random = {
       source  = "hashicorp/random"
@@ -45,7 +45,7 @@ terraform {
 provider "google" {
   alias                 = "billing_override"
   billing_project       = var.project_id
-  region = var.region
+  region                = var.region
   user_project_override = true
 }
 

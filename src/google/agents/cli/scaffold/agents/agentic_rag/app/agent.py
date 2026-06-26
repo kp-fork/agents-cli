@@ -17,7 +17,7 @@ import logging
 {% endif -%}
 import os
 
-import google
+import google.auth
 import vertexai
 from google.adk.agents import Agent
 from google.adk.apps import App
@@ -30,11 +30,10 @@ from google.adk.plugins.bigquery_agent_analytics_plugin import (
 from google.cloud import bigquery
 {%- endif %}
 from google.genai import types
-{%- if cookiecutter.datastore_type == "agent_platform_search" %}
 
+{% if cookiecutter.datastore_type == "agent_platform_search" -%}
 from {{cookiecutter.agent_directory}}.retrievers import create_search_tool
-{%- elif cookiecutter.datastore_type == "agent_platform_vector_search" %}
-
+{%- elif cookiecutter.datastore_type == "agent_platform_vector_search" -%}
 from {{cookiecutter.agent_directory}}.retrievers import search_collection
 {%- endif %}
 
@@ -52,7 +51,8 @@ vertexai.init(project=project_id, location=LOCATION)
 {% if cookiecutter.datastore_type == "agent_platform_search" %}
 data_store_region = os.getenv("DATA_STORE_REGION", "global")
 data_store_id = os.getenv(
-    "DATA_STORE_ID", "{{cookiecutter.project_name}}-collection_documents"
+    "DATA_STORE_ID",
+    "{{cookiecutter.project_name}}-collection_documents",
 )
 data_store_path = (
     f"projects/{project_id}/locations/{data_store_region}"
